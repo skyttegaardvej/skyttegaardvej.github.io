@@ -1,9 +1,9 @@
 name: Auto Bestil Tømning
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: '0 22 * * FRI' # Runs every Friday at 22:00 UTC
+    - cron: "0 9 * * 5" # fredag kl 09
+  workflow_dispatch:
 
 jobs:
   order:
@@ -23,3 +23,10 @@ jobs:
 
       - name: Run script
         run: node order.js
+
+      - name: Upload screenshot on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: error-screenshot
+          path: error.png
