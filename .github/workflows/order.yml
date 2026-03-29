@@ -1,0 +1,25 @@
+name: Auto Bestil Tømning
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 22 * * FRI' # Runs every Friday at 22:00 UTC
+
+jobs:
+  order:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run script
+        run: node order.js
