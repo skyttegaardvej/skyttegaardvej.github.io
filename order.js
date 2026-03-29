@@ -3,6 +3,7 @@ import { wrapper } from "axios-cookiejar-support";
 import tough from "tough-cookie";
 import dayjs from "dayjs";
 
+// 🔐 Session + cookies
 const jar = new tough.CookieJar();
 const client = wrapper(
   axios.create({
@@ -15,7 +16,7 @@ const client = wrapper(
   })
 );
 
-// 🔧 KONFIG (kan senere flyttes til secrets)
+// 🔧 KONFIG (flyt evt. til GitHub Secrets senere)
 const CONFIG = {
   customerId: "92c0963b-99d5-dd11-ba8f-00137238f579",
   wasteAgreementTypeId: "c5b3a132-e261-e011-9cd1-00137238f579",
@@ -29,17 +30,25 @@ const CONFIG = {
   phone: "91103103"
 };
 
-// 📅 næste dato (fx +7 dage)
+// 📅 Finder næste gyldige dato (ingen weekend)
 function getNextDate() {
-  return dayjs().add(7, "day").format("DD-MM-YYYY");
+  let date = dayjs().add(7, "day");
+
+  // skip weekends
+  while (date.day() === 0 || date.day() === 6) {
+    date = date.add(1, "day");
+  }
+
+  return date.format("DD-MM-YYYY");
 }
 
+// 🚀 Main flow
 async function run() {
   try {
     console.log("🚀 Starter bestilling...");
 
     const orderDate = getNextDate();
-    console.log("📅 Dato:", orderDate);
+    console.log("📅 Valgt dato:", orderDate);
 
     // 1. Start session
     await client.get("https://nemaffaldsservice.kk.dk/");
@@ -63,14 +72,14 @@ async function run() {
 
     console.log("🔐 Login gennemført");
 
-    // 3. (valgfri) hent pris – sikrer flow
+    // 3. Hent pris (nogle gange nødvendig for flow)
     await client.get(
       `https://nemaffaldsservice.kk.dk/Site/GetServicePriceFromSite?customerId=${CONFIG.customerId}&wasteAgreementTypeId=${CONFIG.wasteAgreementTypeId}&serviceId=${CONFIG.serviceId}&date=${orderDate}&siteId=${CONFIG.siteId}`
     );
 
     console.log("💰 Pris hentet");
 
-    // 4. Add order
+    // 4. Læg i kurv
     await client.post(
       "https://nemaffaldsservice.kk.dk/Site/AddOrder",
       new URLSearchParams({
@@ -88,7 +97,7 @@ async function run() {
 
     console.log("🛒 Order lagt i kurv");
 
-    // 5. Approve order
+    // 5. Godkend bestilling
     await client.post(
       `https://nemaffaldsservice.kk.dk/Basket/PreApproveOrder?customerId=${CONFIG.customerId}`,
       new URLSearchParams({
@@ -99,7 +108,15 @@ async function run() {
 
     console.log("✅ BESTILLING GENNEMFØRT!");
   } catch (err) {
-    console.error("❌ FEJL:", err.response?.data || err.message);
+    console.error("❌ FEJL:");
+    
+    if (err.response) {
+      console.error("Status:", err.response.status);
+      console.error("Data:", err.response.data);
+    } else {
+      console.error(err.message);
+    }
+
     process.exit(1);
   }
 }
