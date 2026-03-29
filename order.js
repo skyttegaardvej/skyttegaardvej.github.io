@@ -1,15 +1,35 @@
 import puppeteer from "puppeteer";
 import dayjs from "dayjs";
 
-// 📅 Find korrekt fredag
+// 📅 Find næste fredag
 function getTargetFriday() {
   const today = dayjs();
-  const day = today.day();
+  const day = today.day(); // 0 = søndag ... 5 = fredag
 
-  let daysUntilFriday = 5 - day;
-  if (daysUntilFriday < 0) daysUntilFriday += 7;
+  let diff = 5 - day;
+  if (diff < 0) diff += 7;
 
-  return today.add(daysUntilFriday, "day").format("DD-MM-YYYY");
+  return today.add(diff, "day").format("DD-MM-YYYY");
+}
+
+// ⏱️ safe delay
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// 🖱️ robust click (ingen navigation waits)
+async function safeClick(page, selector) {
+  await page.waitForSelector(selector, { visible: true, timeout: 60000 });
+  await page.click(selector);
+  await sleep(1500);
+}
+
+// ✍️ safe typing
+async function safeType(page, selector, value) {
+  await page.waitForSelector(selector, { visible: true, timeout: 60000 });
+  await page.focus(selector);
+  await page.keyboard.type(value, { delay: 50 });
+  await sleep(500);
 }
 
 (async () => {
@@ -19,6 +39,7 @@ function getTargetFriday() {
   });
 
   const page = await browser.newPage();
+  page.setDefaultTimeout(60000);
 
   try {
     console.log("🚀 Starter bestilling...");
@@ -26,72 +47,66 @@ function getTargetFriday() {
     const orderDate = getTargetFriday();
     console.log("📅 Dato:", orderDate);
 
-    // 1. Gå til overview
+    // 1. Start side
     await page.goto(
       "https://nemaffaldsservice.kk.dk/CustomerOverview/Overview?customerId=92c0963b-99d5-dd11-ba8f-00137238f579&searchTerm=Vigerslevvej%20148",
-      { waitUntil: "networkidle2" }
+      { waitUntil: "domcontentloaded" }
     );
 
-    // 2. Klik "Bestilling"
-    await page.waitForSelector('a[href*="Authentication"]');
-    await Promise.all([
-      page.click('a[href*="Authentication"]'),
-      page.waitForNavigation({ waitUntil: "networkidle2" })
-    ]);
+    await sleep(2000);
 
-    // 3. Udfyld formular
-    await page.type('input[name="ContactPerson.FirstName"]', "Malik");
-    await page.type('input[name="ContactPerson.LastName"]', "Qayum");
-    await page.type('input[name="ContactPerson.Email"]', "malik.qayum@hotmail.com");
-    await page.type('input[name="ContactPerson.Phone"]', "91103103");
+    // 2. Login / Authentication
+    await safeClick(page, 'a[href*="Authentication"]');
 
-    await Promise.all([
-      page.click('button[type="submit"]'),
-      page.waitForNavigation({ waitUntil: "networkidle2" })
-    ]);
+    // 3. Udfyld kontakt
+    await safeType(page, 'input[name="ContactPerson.FirstName"]', "Malik");
+    await safeType(page, 'input[name="ContactPerson.LastName"]', "Qayum");
+    await safeType(page, 'input[name="ContactPerson.Email"]', "malik.qayum@hotmail.com");
+    await safeType(page, 'input[name="ContactPerson.Phone"]', "91103103");
 
-    // 4. Vælg haveaffald
-    await page.waitForSelector('a[href*="wasteAgreementTypeId"]');
-    await Promise.all([
-      page.click('a[href*="c5b3a132"]'),
-      page.waitForNavigation({ waitUntil: "networkidle2" })
-    ]);
+    await safeClick(page, 'button[type="submit"]');
 
-    // 5. Vælg service
-    await page.waitForSelector('a[href*="SelectServiceSite"]');
-    await Promise.all([
-      page.click('a[href*="SelectServiceSite"]'),
-      page.waitForNavigation({ waitUntil: "networkidle2" })
-    ]);
+    // 4. Vælg affaldstype
+    await safeClick(page, 'a[href*="c5b3a132"]');
 
-    // 6. Sæt dato
-    await page.waitForSelector('input[name="OrderDate"]');
+    // 5. Select service site
+    await safeClick(page, 'a[href*="SelectServiceSite"]');
+
+    // 6. Sæt dato (DOM injection)
+    await page.waitForSelector('input[name="OrderDate"]', { visible: true });
     await page.evaluate((date) => {
-      document.querySelector('input[name="OrderDate"]').value = date;
+      const el = document.querySelector('input[name="OrderDate"]');
+      el.value = date;
+      el.dispatchEvent(new Event("change", { bubbles: true }));
     }, orderDate);
 
-    // 7. Submit order
-    await Promise.all([
-      page.click('button[type="submit"]'),
-      page.waitForNavigation({ waitUntil: "networkidle2" })
-    ]);
+    await sleep(1000);
 
-    // 8. Godkend vilkår
-    await page.waitForSelector('input[name="TermsOfDeliveryChecked"]');
+    // 7. Submit order
+    await safeClick(page, 'button[type="submit"]');
+
+    // 8. Accept terms
+    await page.waitForSelector('input[name="TermsOfDeliveryChecked"]', {
+      visible: true,
+      timeout: 60000
+    });
+
     await page.click('input[name="TermsOfDeliveryChecked"]');
+    await sleep(500);
 
     // 9. Final submit
-    await Promise.all([
-      page.click('button[type="submit"]'),
-      page.waitForNavigation({ waitUntil: "networkidle2" })
-    ]);
+    await safeClick(page, 'button[type="submit"]');
 
     console.log("✅ BESTILLING GENNEMFØRT!");
+
+    await sleep(3000);
   } catch (err) {
     console.error("❌ FEJL:", err);
 
-    // 📸 Screenshot ved fejl (meget vigtigt!)
-    await page.screenshot({ path: "error.png" });
+    await page.screenshot({
+      path: "error.png",
+      fullPage: true
+    });
   } finally {
     await browser.close();
   }
