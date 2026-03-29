@@ -30,7 +30,7 @@ const CONFIG = {
   phone: "91103103"
 };
 
-// 📅 Find korrekt fredag baseret på dags dato
+// 📅 Find korrekt fredag
 function getTargetFriday() {
   const today = dayjs();
   const day = today.day(); // 0=søn, 5=fre
@@ -38,23 +38,21 @@ function getTargetFriday() {
   let daysUntilFriday = 5 - day;
 
   if (daysUntilFriday < 0) {
-    // hvis vi er lørdag/søndag → næste fredag
     daysUntilFriday += 7;
   }
 
-  const target = today.add(daysUntilFriday, "day");
-
-  return target.format("DD-MM-YYYY");
+  return today.add(daysUntilFriday, "day").format("DD-MM-YYYY");
 }
 
 // 🚀 Bestillingsflow
 async function placeOrder(orderDate) {
   console.log("📅 Bestiller til:", orderDate);
 
-  // 1. Session
+  // 1. Start session
   await client.get("https://nemaffaldsservice.kk.dk/");
+  console.log("✅ Session startet");
 
-  // 2. Login
+  // 2. Authenticate
   await client.post(
     "https://nemaffaldsservice.kk.dk/Authentication/AuthenticationForm",
     new URLSearchParams({
@@ -70,13 +68,24 @@ async function placeOrder(orderDate) {
     })
   );
 
-  // 3. Pris (trigger flow)
+  console.log("🔐 Login gennemført");
+
+  // 3. 🔹 VIGTIGT: Select service site (manglede før)
+  await client.get(
+    `https://nemaffaldsservice.kk.dk/Site/SelectServiceSite?customerId=${CONFIG.customerId}&causeId=${CONFIG.causeId}&serviceId=${CONFIG.serviceId}&wasteAgreementTypeId=${CONFIG.wasteAgreementTypeId}`
+  );
+
+  console.log("📍 Site valgt");
+
+  // 4. Hent pris (trigger backend state)
   await client.get(
     `https://nemaffaldsservice.kk.dk/Site/GetServicePriceFromSite?customerId=${CONFIG.customerId}&wasteAgreementTypeId=${CONFIG.wasteAgreementTypeId}&serviceId=${CONFIG.serviceId}&date=${orderDate}&siteId=${CONFIG.siteId}`
   );
 
-  // 4. Add order
-  await client.post(
+  console.log("💰 Pris hentet");
+
+  // 5. Add order
+  const addOrderResponse = await client.post(
     "https://nemaffaldsservice.kk.dk/Site/AddOrder",
     new URLSearchParams({
       SiteId: CONFIG.siteId,
@@ -91,14 +100,18 @@ async function placeOrder(orderDate) {
     })
   );
 
-  // 5. Approve
-  await client.post(
+  console.log("🛒 AddOrder response:", addOrderResponse.status);
+
+  // 6. Approve order
+  const approveResponse = await client.post(
     `https://nemaffaldsservice.kk.dk/Basket/PreApproveOrder?customerId=${CONFIG.customerId}`,
     new URLSearchParams({
       customerId: CONFIG.customerId,
       TermsOfDeliveryChecked: "true"
     })
   );
+
+  console.log("📦 Approve response:", approveResponse.status);
 }
 
 // 🚀 MAIN
