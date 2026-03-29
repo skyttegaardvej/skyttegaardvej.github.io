@@ -30,30 +30,31 @@ const CONFIG = {
   phone: "91103103"
 };
 
-// 📅 Dagens dato (fredag)
-function getToday() {
-  return dayjs();
-}
-
-// 📅 Næste fredag (fallback)
-function getNextFriday() {
+// 📅 Find korrekt fredag baseret på dags dato
+function getTargetFriday() {
   const today = dayjs();
-  const todayDay = today.day();
+  const day = today.day(); // 0=søn, 5=fre
 
-  let daysUntilFriday = (5 - todayDay + 7) % 7;
-  if (daysUntilFriday === 0) daysUntilFriday = 7;
+  let daysUntilFriday = 5 - day;
 
-  return today.add(daysUntilFriday, "day");
+  if (daysUntilFriday < 0) {
+    // hvis vi er lørdag/søndag → næste fredag
+    daysUntilFriday += 7;
+  }
+
+  const target = today.add(daysUntilFriday, "day");
+
+  return target.format("DD-MM-YYYY");
 }
 
-// 🔁 Selve bestillingsflowet (kan genbruges)
-async function placeOrder(orderDateFormatted) {
-  console.log("📅 Forsøger dato:", orderDateFormatted);
+// 🚀 Bestillingsflow
+async function placeOrder(orderDate) {
+  console.log("📅 Bestiller til:", orderDate);
 
-  // 1. Start session
+  // 1. Session
   await client.get("https://nemaffaldsservice.kk.dk/");
 
-  // 2. Authenticate
+  // 2. Login
   await client.post(
     "https://nemaffaldsservice.kk.dk/Authentication/AuthenticationForm",
     new URLSearchParams({
@@ -69,9 +70,9 @@ async function placeOrder(orderDateFormatted) {
     })
   );
 
-  // 3. Hent pris
+  // 3. Pris (trigger flow)
   await client.get(
-    `https://nemaffaldsservice.kk.dk/Site/GetServicePriceFromSite?customerId=${CONFIG.customerId}&wasteAgreementTypeId=${CONFIG.wasteAgreementTypeId}&serviceId=${CONFIG.serviceId}&date=${orderDateFormatted}&siteId=${CONFIG.siteId}`
+    `https://nemaffaldsservice.kk.dk/Site/GetServicePriceFromSite?customerId=${CONFIG.customerId}&wasteAgreementTypeId=${CONFIG.wasteAgreementTypeId}&serviceId=${CONFIG.serviceId}&date=${orderDate}&siteId=${CONFIG.siteId}`
   );
 
   // 4. Add order
@@ -79,7 +80,7 @@ async function placeOrder(orderDateFormatted) {
     "https://nemaffaldsservice.kk.dk/Site/AddOrder",
     new URLSearchParams({
       SiteId: CONFIG.siteId,
-      OrderDate: orderDateFormatted,
+      OrderDate: orderDate,
       Description: "",
       WasteAgreementTypeId: CONFIG.wasteAgreementTypeId,
       CustomerId: CONFIG.customerId,
@@ -100,35 +101,18 @@ async function placeOrder(orderDateFormatted) {
   );
 }
 
-// 🚀 Main
+// 🚀 MAIN
 async function run() {
   try {
     console.log("🚀 Starter bestilling...");
 
-    // 🟢 1. Forsøg: i dag (fredag)
-    const today = getToday();
-    const todayFormatted = today.format("DD-MM-YYYY");
+    const orderDate = getTargetFriday();
 
-    try {
-      await placeOrder(todayFormatted);
-      console.log("✅ BESTILT TIL I DAG!");
-      return;
-    } catch (err) {
-      console.log("⚠️ Kunne ikke bestille til i dag...");
-      if (err.response) {
-        console.log("Status:", err.response.status);
-      }
-    }
+    await placeOrder(orderDate);
 
-    // 🟡 2. Fallback: næste fredag
-    const nextFriday = getNextFriday();
-    const nextFridayFormatted = nextFriday.format("DD-MM-YYYY");
-
-    await placeOrder(nextFridayFormatted);
-
-    console.log("✅ BESTILT TIL NÆSTE FREDAG!");
+    console.log("✅ BESTILLING GENNEMFØRT!");
   } catch (err) {
-    console.error("❌ TOTAL FEJL:");
+    console.error("❌ FEJL:");
 
     if (err.response) {
       console.error("Status:", err.response.status);
