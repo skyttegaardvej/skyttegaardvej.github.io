@@ -1,52 +1,62 @@
 import puppeteer from "puppeteer";
 import dayjs from "dayjs";
 
-// 📅 fredag
+// 📅 Find korrekt fredag
 function getTargetFriday() {
   const today = dayjs();
-  let diff = 5 - today.day();
+  let diff = 5 - today.day(); // fredag = 5
   if (diff < 0) diff += 7;
   return today.add(diff, "day").format("DD-MM-YYYY");
 }
 
+// ⏱️ sleep helper
 function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// 🔥 FIND OG KLIK ALT (links + buttons + inputs)
-async function clickByText(page, text) {
-  const elements = await page.$$("a, button, input[type=submit]");
+// 🔥 Submit form (virker altid på ASP.NET)
+async function submitForm(page) {
+  await page.evaluate(() => {
+    const form = document.querySelector("form");
+    if (!form) throw new Error("Ingen form fundet");
 
-  for (const el of elements) {
-    const value = await page.evaluate(el => {
-      return (
-        el.innerText ||
-        el.value ||
-        el.getAttribute("value") ||
-        ""
-      );
-    }, el);
+    const btn =
+      form.querySelector('button[type="submit"]') ||
+      form.querySelector('input[type="submit"]');
 
-    if (value && value.toLowerCase().includes(text.toLowerCase())) {
-      console.log(`👉 Klikker på: "${value.trim()}"`);
-      await el.click();
-      await sleep(2000);
-      return true;
-    }
-  }
+    if (!btn) throw new Error("Ingen submit knap fundet");
 
-  throw new Error(`Element med tekst "${text}" ikke fundet`);
+    btn.click();
+  });
+
+  await sleep(3000);
 }
 
-// 🔁 vent på form
+// 🔁 Vent på auth form
 async function waitForForm(page) {
   for (let i = 0; i < 20; i++) {
-    if (await page.$('input[name="ContactPerson.FirstName"]')) {
-      return true;
-    }
+    const exists = await page.$('input[name="ContactPerson.FirstName"]');
+    if (exists) return;
+    console.log("⏳ Venter på form...");
     await sleep(1000);
   }
   throw new Error("Form loadede aldrig");
+}
+
+// 🔍 Klik link via tekst (bruges kun hvor nødvendigt)
+async function clickLinkByText(page, text) {
+  await page.evaluate((text) => {
+    const links = [...document.querySelectorAll("a")];
+    const match = links.find(a =>
+      a.innerText.toLowerCase().includes(text.toLowerCase())
+    );
+
+    if (!match) throw new Error(`Link "${text}" ikke fundet`);
+
+    match.click();
+  }, text);
+
+  await new Promise(r => setTimeout(r, 3000));
 }
 
 (async () => {
@@ -60,6 +70,7 @@ async function waitForForm(page) {
 
   try {
     console.log("🚀 Starter bestilling...");
+
     const orderDate = getTargetFriday();
     console.log("📅 Dato:", orderDate);
 
@@ -77,7 +88,7 @@ async function waitForForm(page) {
     // 2. Vent på form
     await waitForForm(page);
 
-    // 3. Udfyld
+    // 3. Udfyld kontaktinfo
     await page.type('input[name="ContactPerson.FirstName"]', "Malik");
     await page.type('input[name="ContactPerson.LastName"]', "Qayum");
     await page.type('input[name="ContactPerson.Email"]', "malik.qayum@hotmail.com");
@@ -85,49 +96,49 @@ async function waitForForm(page) {
 
     await sleep(1000);
 
-    // 🔥 FIX HER (button i stedet for link)
-    await clickByText(page, "videre");
+    // 4. Submit auth
+    await submitForm(page);
 
-    await sleep(3000);
     await page.screenshot({ path: "step2-after-login.png", fullPage: true });
 
-    // 4. Haveaffald
-    await clickByText(page, "haveaffald");
+    // 5. Klik "Haveaffald"
+    await clickLinkByText(page, "haveaffald");
 
-    await sleep(3000);
     await page.screenshot({ path: "step3-haveaffald.png", fullPage: true });
 
-    // 5. Tømning
-    await clickByText(page, "tømning");
+    // 6. Klik "Tømning"
+    await clickLinkByText(page, "tømning");
 
-    await sleep(3000);
     await page.screenshot({ path: "step4-service.png", fullPage: true });
 
-    // 6. Dato
+    // 7. Sæt dato
     await page.waitForSelector('input[type="text"]');
 
     await page.evaluate((date) => {
       const input = document.querySelector('input[type="text"]');
+      if (!input) throw new Error("Dato input ikke fundet");
+
       input.value = date;
       input.dispatchEvent(new Event("change", { bubbles: true }));
     }, orderDate);
 
     await sleep(1000);
 
-    // 7. Videre
-    await clickByText(page, "videre");
+    // 8. Submit ordre
+    await submitForm(page);
 
-    await sleep(3000);
     await page.screenshot({ path: "step5-review.png", fullPage: true });
 
-    // 8. Accept terms
-    const checkbox = await page.$('input[type="checkbox"]');
-    if (checkbox) await checkbox.click();
+    // 9. Accept terms
+    await page.evaluate(() => {
+      const checkbox = document.querySelector('input[type="checkbox"]');
+      if (checkbox) checkbox.click();
+    });
 
     await sleep(1000);
 
-    // 9. Godkend
-    await clickByText(page, "godkend");
+    // 10. Endelig godkend
+    await submitForm(page);
 
     await sleep(5000);
     await page.screenshot({ path: "step6-done.png", fullPage: true });
