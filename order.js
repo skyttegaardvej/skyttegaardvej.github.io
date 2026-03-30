@@ -1,7 +1,7 @@
 import puppeteer from "puppeteer";
 import dayjs from "dayjs";
 
-// 📅 fredag logik
+// 📅 fredag
 function getTargetFriday() {
   const today = dayjs();
   let diff = 5 - today.day();
@@ -13,31 +13,29 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-// 🔍 find link via tekst
+// 🔥 FIND OG KLIK ALT (links + buttons + inputs)
 async function clickByText(page, text) {
-  const links = await page.$$("a");
+  const elements = await page.$$("a, button, input[type=submit]");
 
-  for (const link of links) {
-    const value = await page.evaluate(el => el.innerText, link);
+  for (const el of elements) {
+    const value = await page.evaluate(el => {
+      return (
+        el.innerText ||
+        el.value ||
+        el.getAttribute("value") ||
+        ""
+      );
+    }, el);
+
     if (value && value.toLowerCase().includes(text.toLowerCase())) {
-      await link.click();
+      console.log(`👉 Klikker på: "${value.trim()}"`);
+      await el.click();
       await sleep(2000);
       return true;
     }
   }
 
-  throw new Error(`Link med tekst "${text}" ikke fundet`);
-}
-
-// 🔁 vent på URL change
-async function waitForUrlIncludes(page, text) {
-  for (let i = 0; i < 20; i++) {
-    if (page.url().toLowerCase().includes(text.toLowerCase())) {
-      return true;
-    }
-    await sleep(1000);
-  }
-  throw new Error(`URL ændrede sig ikke til ${text}`);
+  throw new Error(`Element med tekst "${text}" ikke fundet`);
 }
 
 // 🔁 vent på form
@@ -65,7 +63,7 @@ async function waitForForm(page) {
     const orderDate = getTargetFriday();
     console.log("📅 Dato:", orderDate);
 
-    // 1. Gå direkte til Authentication (spring alt andet over!)
+    // 1. Gå direkte til auth
     await page.goto(
       "https://nemaffaldsservice.kk.dk/Authentication?customerId=92c0963b-99d5-dd11-ba8f-00137238f579&actionId=38dca43c-0876-e411-bf72-005056ad66a0",
       { waitUntil: "domcontentloaded" }
@@ -79,7 +77,7 @@ async function waitForForm(page) {
     // 2. Vent på form
     await waitForForm(page);
 
-    // 3. Udfyld form
+    // 3. Udfyld
     await page.type('input[name="ContactPerson.FirstName"]', "Malik");
     await page.type('input[name="ContactPerson.LastName"]', "Qayum");
     await page.type('input[name="ContactPerson.Email"]', "malik.qayum@hotmail.com");
@@ -87,29 +85,26 @@ async function waitForForm(page) {
 
     await sleep(1000);
 
-    // 4. Submit
-    await clickByText(page, "videre"); // fallback hvis dansk
-    await sleep(3000);
+    // 🔥 FIX HER (button i stedet for link)
+    await clickByText(page, "videre");
 
+    await sleep(3000);
     await page.screenshot({ path: "step2-after-login.png", fullPage: true });
 
-    // 5. Klik haveaffald
+    // 4. Haveaffald
     await clickByText(page, "haveaffald");
 
+    await sleep(3000);
     await page.screenshot({ path: "step3-haveaffald.png", fullPage: true });
 
-    // 6. Klik bestil/tømning
+    // 5. Tømning
     await clickByText(page, "tømning");
 
     await sleep(3000);
     await page.screenshot({ path: "step4-service.png", fullPage: true });
 
-    // 7. Sæt dato
-    const inputExists = await page.$('input[type="text"]');
-
-    if (!inputExists) {
-      throw new Error("Ingen dato input fundet");
-    }
+    // 6. Dato
+    await page.waitForSelector('input[type="text"]');
 
     await page.evaluate((date) => {
       const input = document.querySelector('input[type="text"]');
@@ -119,21 +114,19 @@ async function waitForForm(page) {
 
     await sleep(1000);
 
-    // 8. Submit ordre
+    // 7. Videre
     await clickByText(page, "videre");
 
     await sleep(3000);
     await page.screenshot({ path: "step5-review.png", fullPage: true });
 
-    // 9. Accept terms
+    // 8. Accept terms
     const checkbox = await page.$('input[type="checkbox"]');
-    if (checkbox) {
-      await checkbox.click();
-    }
+    if (checkbox) await checkbox.click();
 
     await sleep(1000);
 
-    // 10. Endelig godkend
+    // 9. Godkend
     await clickByText(page, "godkend");
 
     await sleep(5000);
